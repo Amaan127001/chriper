@@ -1,0 +1,12 @@
+/vendor
+/node_modules
+/.env
+.env
+/.git
+/storage/*.key
+/public/hot
+/public/storage
+/.phpunit.result.cache
+.DS_Store
+npm-debug.log
+yarn-error.log
