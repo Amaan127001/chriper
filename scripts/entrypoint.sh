@@ -1,34 +1,45 @@
 #!/usr/bin/env bash
 set -e
 
-# allow override for debug
-echo "Starting entrypoint..."
+echo "Entrypoint: starting..."
 
-# ensure correct permissions
+# Fix permissions
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache || true
 
-# generate app key if not set
+# Generate app key if not set
 if [ -z "${APP_KEY}" ]; then
   echo "APP_KEY not set — generating..."
-  php artisan key:generate --force
+  php artisan key:generate --force || true
 fi
 
-# clear & cache config for performance (only in production)
+# Replace listen socket with TCP port 9000 in php-fpm pool config (works for php:8.x images)
+# Safely update www.conf to listen on 127.0.0.1:9000
+PHP_FPM_POOL="/usr/local/etc/php-fpm.d/www.conf"
+if [ -f "${PHP_FPM_POOL}" ]; then
+  echo "Configuring php-fpm to listen on 127.0.0.1:9000"
+  sed -i 's/^listen = .*$/listen = 127.0.0.1:9000/' "${PHP_FPM_POOL}"
+fi
+
+# Cache and optimize in production
 if [ "${APP_ENV}" = "production" ]; then
+  echo "Caching config & routes..."
   php artisan config:cache || true
   php artisan route:cache || true
   php artisan view:cache || true
 fi
 
-# optionally run migrations on start (set RUN_MIGRATIONS=true in Render env)
+# Optionally run migrations
 if [ "${RUN_MIGRATIONS}" = "true" ]; then
   echo "Running migrations..."
-  php artisan migrate --force || echo "migrate failed, continuing..."
+  php artisan migrate --force || echo "migrations failed (continuing)"
 fi
 
-# start php-fpm and nginx (php-fpm in background then nginx in foreground)
+# Start php-fpm (foreground) in background, then start nginx foreground
 echo "Starting php-fpm..."
 php-fpm --nodaemonize &
+
+# Wait a moment for php-fpm to start listening
+sleep 1
 
 echo "Starting nginx..."
 nginx -g 'daemon off;'
